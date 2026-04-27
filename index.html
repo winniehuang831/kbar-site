@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K棒自動分析</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap');
+  :root{
+    --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3350;
+    --red:#e84545;--accent:#f0b429;--text:#e8eaf0;--muted:#7a7f9a;
+    --blue:#60a5fa;--green:#26c281;--mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Noto Sans TC',sans-serif;min-height:100vh;padding:24px 16px 60px;}
+  h1{text-align:center;font-size:1.4rem;font-weight:700;color:var(--accent);margin-bottom:4px;}
+  .subtitle{text-align:center;color:var(--muted);font-size:0.75rem;font-family:var(--mono);margin-bottom:20px;}
+  .container{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:12px;}
+
+  /* Lookup */
+  .lookup-card{background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;}
+  .lookup-title{font-size:0.8rem;font-weight:700;color:var(--accent);letter-spacing:.06em;}
+  .market-tabs{display:flex;gap:8px;}
+  .market-tab{flex:1;padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:.78rem;font-weight:600;cursor:pointer;text-align:center;transition:all .2s;}
+  .market-tab.active{background:var(--accent);color:#000;border-color:var(--accent);}
+  .api-row{display:flex;flex-direction:column;gap:4px;font-size:.74rem;}
+  .api-row label{color:var(--muted);}
+  .api-row input{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:7px 10px;font-family:var(--mono);font-size:.74rem;outline:none;width:100%;transition:border-color .2s;}
+  .api-row input:focus{border-color:var(--accent);}
+  .api-hint{font-size:.68rem;color:var(--muted);}
+  .api-hint a{color:var(--blue);text-decoration:none;}
+  .lookup-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
+  .lookup-field{display:flex;flex-direction:column;gap:4px;font-size:.74rem;}
+  .lookup-field label{color:var(--muted);}
+  .lookup-field input{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:7px 10px;font-family:var(--mono);font-size:.82rem;outline:none;transition:border-color .2s;}
+  .lookup-field input:focus{border-color:var(--accent);}
+  .lookup-field.symbol input{width:110px;text-transform:uppercase;}
+  .lookup-field.date input{width:150px;}
+  .fetch-btn{padding:8px 20px;background:var(--accent);color:#000;border:none;border-radius:7px;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap;align-self:flex-end;transition:opacity .2s;}
+  .fetch-btn:hover{opacity:.85;}
+  .fetch-btn:disabled{opacity:.4;cursor:not-allowed;}
+  .status-bar{font-size:.74rem;font-family:var(--mono);min-height:18px;color:var(--muted);}
+  .status-bar.ok{color:var(--green);}
+  .status-bar.err{color:var(--red);}
+  .status-bar.loading{color:var(--accent);}
+
+  /* Result panel - hidden until data loaded */
+  .result-panel{display:none;flex-direction:column;gap:12px;}
+
+  /* Candle type badge */
+  .candle-type-card{
+    border-radius:12px;padding:16px;
+    display:flex;align-items:center;gap:16px;
+  }
+  .candle-type-card.red-k{background:rgba(232,69,69,0.1);border:1px solid var(--red);}
+  .candle-type-card.black-k{background:rgba(136,136,136,0.08);border:1px solid #555;}
+  .candle-type-label{font-size:1rem;font-weight:700;}
+  .candle-type-card.red-k .candle-type-label{color:var(--red);}
+  .candle-type-card.black-k .candle-type-label{color:#ccc;}
+  .candle-type-sub{font-size:.75rem;color:var(--muted);margin-top:3px;}
+
+  /* dominant badge */
+  .dominant-badge{
+    display:inline-block;padding:3px 10px;border-radius:5px;
+    font-size:.72rem;font-weight:700;margin-top:6px;
+  }
+  .dom-body   {background:rgba(232,69,69,.15);color:var(--red);border:1px solid var(--red);}
+  .dom-body-b {background:rgba(136,136,136,.15);color:#ccc;border:1px solid #555;}
+  .dom-upper  {background:rgba(240,180,41,.15);color:var(--accent);border:1px solid var(--accent);}
+  .dom-lower  {background:rgba(240,180,41,.15);color:var(--accent);border:1px solid var(--accent);}
+
+  /* price row */
+  .price-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .price-chip{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-family:var(--mono);font-size:.76rem;}
+  .price-chip span{color:var(--accent);font-weight:600;}
+
+  /* result cards */
+  .res-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;gap:14px;align-items:flex-start;}
+  .res-card.highlight{border-color:var(--accent);}
+  .candle-col{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:44px;}
+  .card-body{flex:1;display:flex;flex-direction:column;gap:8px;}
+  .card-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+  .tag{padding:2px 10px;border-radius:4px;font-size:.72rem;font-weight:600;white-space:nowrap;}
+  .tag-red   {background:rgba(232,69,69,.15);color:var(--red);border:1px solid var(--red);}
+  .tag-black {background:rgba(136,136,136,.1);color:#ccc;border:1px solid #555;}
+  .tag-shadow{background:rgba(240,180,41,.1);color:var(--accent);border:1px solid var(--accent);}
+  .formula{font-family:var(--mono);font-size:.74rem;color:#a8b4d4;}
+  .formula .t{color:var(--red);}
+  .formula .b{color:var(--blue);}
+  .note{font-size:.71rem;color:var(--muted);line-height:1.7;}
+  .inputs-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+  .field{display:flex;align-items:center;gap:5px;font-size:.74rem;}
+  .field label{color:var(--muted);white-space:nowrap;min-width:44px;}
+  .field input{width:78px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 7px;font-family:var(--mono);font-size:.76rem;outline:none;-webkit-appearance:none;transition:border-color .2s;}
+  .field input:focus{border-color:var(--accent);}
+  .result-area{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px;min-width:96px;}
+  .pct-box{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 10px;width:100%;text-align:center;font-family:var(--mono);font-size:.88rem;font-weight:700;color:var(--muted);}
+  .pct-box.pos{color:var(--red);border-color:rgba(232,69,69,.4);}
+  .pct-box.neg{color:var(--blue);border-color:rgba(96,165,250,.4);}
+  .signal-box{width:100%;text-align:center;font-size:.72rem;font-weight:700;padding:3px 6px;border-radius:5px;letter-spacing:.04em;}
+  .signal-box.buy {display:block;background:rgba(232,69,69,.15);color:var(--red);border:1px solid var(--red);}
+  .signal-box.sell{display:block;background:rgba(38,194,129,.15);color:var(--green);border:1px solid var(--green);}
+  .signal-box.none{display:block;color:var(--muted);border:1px solid transparent;}
+
+  /* dominant highlight ring */
+  .res-card.dominant{border:2px solid var(--accent);background:#1e2030;}
+  .dominant-tag{font-size:.65rem;background:var(--accent);color:#000;padding:1px 7px;border-radius:3px;font-weight:700;}
+
+  /* Volume card */
+  .vol-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;}
+  .vol-title{font-size:.78rem;font-weight:700;color:var(--accent);letter-spacing:.05em;}
+  .vol-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .vol-chip{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-family:var(--mono);font-size:.76rem;}
+  .vol-chip span{color:var(--accent);font-weight:600;}
+  .vol-result{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .vol-multiple{font-family:var(--mono);font-size:1.3rem;font-weight:700;}
+  .vol-multiple.high{color:var(--red);}
+  .vol-multiple.low {color:var(--blue);}
+  .vol-multiple.mid {color:var(--accent);}
+  .vol-signal{padding:4px 12px;border-radius:5px;font-size:.75rem;font-weight:700;}
+  .vol-signal.surge {background:rgba(232,69,69,.15);color:var(--red);border:1px solid var(--red);}
+  .vol-signal.shrink{background:rgba(96,165,250,.15);color:var(--blue);border:1px solid var(--blue);}
+  .vol-signal.normal{background:rgba(240,180,41,.1);color:var(--accent);border:1px solid var(--accent);}
+  .vol-bar-wrap{width:100%;background:var(--surface2);border-radius:4px;height:8px;overflow:hidden;}
+  .vol-bar{height:8px;border-radius:4px;background:var(--accent);transition:width .5s;}
+</style>
+</head>
+<body>
+
+<h1>K棒自動分析</h1>
+<div class="subtitle">輸入股票代號與日期，自動判斷K棒類型並套入公式</div>
+
+<div class="container">
+
+  <!-- Lookup -->
+  <div class="lookup-card">
+    <div class="lookup-title">📡 股票查詢</div>
+    <div class="market-tabs">
+      <div class="market-tab active" id="tab-tw" onclick="switchMarket('tw')">🇹🇼 台股</div>
+      <div class="market-tab"        id="tab-us" onclick="switchMarket('us')">🇺🇸 美股</div>
+    </div>
+    <div id="api-key-row" class="api-row" style="display:none">
+      <label>Polygon.io API Key（免費）</label>
+      <input type="text" id="polygon_key" placeholder="貼上你的 API Key">
+      <div class="api-hint">免費申請：<a href="https://polygon.io" target="_blank">polygon.io</a> → 註冊 → 複製 API Key</div>
+    </div>
+    <div class="lookup-row">
+      <div class="lookup-field symbol">
+        <label id="symbol-label">股票代號（台股）</label>
+        <input type="text" id="symbol" placeholder="例：2330">
+      </div>
+      <div class="lookup-field date">
+        <label>日期</label>
+        <input type="date" id="trade-date">
+      </div>
+      <button class="fetch-btn" id="fetch-btn" onclick="fetchData()">查詢</button>
+    </div>
+    <div class="status-bar" id="status">請輸入股票代號與日期後按查詢</div>
+  </div>
+
+  <!-- Result panel -->
+  <div class="result-panel" id="result-panel">
+
+    <!-- Price summary -->
+    <div class="price-row" id="price-row"></div>
+
+    <!-- Candle type card -->
+    <div id="candle-type-card" class="candle-type-card">
+      <div id="candle-svg"></div>
+      <div>
+        <div class="candle-type-label" id="candle-type-label"></div>
+        <div class="candle-type-sub"  id="candle-type-sub"></div>
+        <div id="dominant-badge" class="dominant-badge"></div>
+      </div>
+    </div>
+
+    <!-- Section label -->
+    <div id="section-label" style="font-size:.72rem;font-weight:700;letter-spacing:.08em;padding:7px 14px;border-radius:6px;"></div>
+
+    <!-- Volume card -->
+    <div class="vol-card" id="vol-card">
+      <div class="vol-title">📦 成交量分析</div>
+      <div class="vol-row">
+        <div class="vol-chip">當日量 <span id="vol-today">—</span></div>
+        <div class="vol-chip">5日均量 <span id="vol-avg">—</span></div>
+      </div>
+      <div class="vol-bar-wrap"><div class="vol-bar" id="vol-bar" style="width:0%"></div></div>
+      <div class="vol-result">
+        <div class="vol-multiple" id="vol-multiple">—</div>
+        <div class="vol-signal"   id="vol-signal"></div>
+      </div>
+    </div>
+
+    <!-- 3 result cards: body / upper wick / lower wick -->
+    <div id="card-body-wrap"></div>
+    <div id="card-upper-wrap"></div>
+    <div id="card-lower-wrap"></div>
+
+  </div>
+</div>
+
+<script>
+let currentMarket = 'tw';
+
+function switchMarket(m){
+  currentMarket = m;
+  document.getElementById('tab-tw').classList.toggle('active', m==='tw');
+  document.getElementById('tab-us').classList.toggle('active', m==='us');
+  document.getElementById('api-key-row').style.display = m==='us' ? 'flex' : 'none';
+  document.getElementById('symbol-label').textContent = m==='tw' ? '股票代號（台股）' : '股票代號（美股）';
+  document.getElementById('symbol').placeholder = m==='tw' ? '例：2330 或 6547' : '例：AAPL';
+}
+
+document.getElementById('trade-date').value = new Date().toISOString().slice(0,10);
+document.addEventListener('keydown', e=>{ if(e.key==='Enter') fetchData(); });
+
+async function fetchData(){
+  const symbol = document.getElementById('symbol').value.trim().toUpperCase();
+  const date   = document.getElementById('trade-date').value;
+  const btn    = document.getElementById('fetch-btn');
+  if(!symbol||!date){setStatus('請填入股票代號與日期','err');return;}
+  btn.disabled=true;
+  setStatus('查詢中…','loading');
+  document.getElementById('result-panel').style.display='none';
+  try{
+    if(currentMarket==='tw') await fetchTW(symbol,date);
+    else                      await fetchUS(symbol,date);
+  }catch(e){ setStatus('查詢失敗：'+e.message,'err'); }
+  btn.disabled=false;
+}
+
+// ── 台股：先查 TWSE 上市，失敗自動切 TPEx 上櫃 ──
+async function fetchTW(symbol, date){
+  setStatus(`查詢中（${symbol}）…`, 'loading');
+
+  // 1. 試 TWSE 上市
+  const twResult = await fetchTWSE(symbol, date);
+  if(twResult){
+    setStatus(`✓ ${symbol}（上市）　${twResult.dateLabel} 資料已帶入`, 'ok');
+    analyzeAndRender(twResult.open, twResult.high, twResult.low, twResult.close, symbol, twResult.vol, twResult.avg5Vol);
+    return;
+  }
+
+  // 2. 自動改查 TPEx 上櫃
+  setStatus(`上市查無資料，改查上櫃（${symbol}）…`, 'loading');
+  const otcResult = await fetchTPEx(symbol, date);
+  if(otcResult){
+    setStatus(`✓ ${symbol}（上櫃）　${otcResult.dateLabel} 資料已帶入`, 'ok');
+    analyzeAndRender(otcResult.open, otcResult.high, otcResult.low, otcResult.close, symbol, otcResult.vol, otcResult.avg5Vol);
+    return;
+  }
+
+  setStatus(`找不到 ${symbol} 的資料（請確認代號或日期是否為交易日）`, 'err');
+}
+
+async function fetchTWSE(symbol, date){
+  try{
+    const d = date.replace(/-/g,'');
+    const url = `https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${d}&stockNo=${symbol}`;
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    const json = await res.json();
+    if(!json.data || json.data.length===0) return null;
+
+    const [y,m,dd] = date.split('-');
+    const roc = `${parseInt(y)-1911}/${m}/${dd}`;
+    const allRows = json.data;
+    const rowIdx = allRows.findIndex(r=>r[0].trim()===roc);
+    const row = rowIdx>=0 ? allRows[rowIdx] : allRows[allRows.length-1];
+    const actualIdx = rowIdx>=0 ? rowIdx : allRows.length-1;
+
+    // TWSE cols: 0=日期 1=成交股數 2=成交金額 3=開盤 4=最高 5=最低 6=收盤
+    const open  = parseFloat(row[3].replace(/,/g,''));
+    const high  = parseFloat(row[4].replace(/,/g,''));
+    const low   = parseFloat(row[5].replace(/,/g,''));
+    const close = parseFloat(row[6].replace(/,/g,''));
+    if(isNaN(open)||isNaN(close)) return null;
+
+    const todayVol = parseFloat(row[1].replace(/,/g,''));
+    const prevRows = allRows.slice(Math.max(0,actualIdx-5), actualIdx);
+    const avg5Vol  = prevRows.length>0 ? prevRows.reduce((s,r)=>s+parseFloat(r[1].replace(/,/g,'')),0)/prevRows.length : null;
+
+    return { open, high, low, close, vol:todayVol, avg5Vol, dateLabel: row[0].trim() };
+  }catch(e){ return null; }
+}
+
+async function fetchTPEx(symbol, date){
+  try{
+    const [y,m,dd] = date.split('-');
+    const rocYM  = `${parseInt(y)-1911}/${m}`;
+    const rocDay = `${parseInt(y)-1911}/${m}/${dd}`;
+
+    // 透過 Netlify Function proxy 避免 CORS 問題
+    const url = `/.netlify/functions/tpex?rocYM=${encodeURIComponent(rocYM)}&symbol=${symbol}`;
+    const res  = await fetch(url);
+    if(!res.ok) return null;
+    const json = await res.json();
+    if(!json.aaData || json.aaData.length===0) return null;
+
+    // TPEx cols: 0=日期 1=成交股數 2=成交金額 3=開盤 4=最高 5=最低 6=收盤
+    const allRows   = json.aaData;
+    const rowIdx    = allRows.findIndex(r => r[0].trim() === rocDay);
+    const row       = rowIdx >= 0 ? allRows[rowIdx] : allRows[allRows.length - 1];
+    const actualIdx = rowIdx >= 0 ? rowIdx : allRows.length - 1;
+
+    const open  = parseFloat(row[3].replace(/,/g,''));
+    const high  = parseFloat(row[4].replace(/,/g,''));
+    const low   = parseFloat(row[5].replace(/,/g,''));
+    const close = parseFloat(row[6].replace(/,/g,''));
+    if(isNaN(open) || isNaN(close)) return null;
+
+    const todayVol = parseFloat(row[1].replace(/,/g,''));
+    const prevRows = allRows.slice(Math.max(0, actualIdx - 5), actualIdx);
+    const avg5Vol  = prevRows.length > 0
+      ? prevRows.reduce((s,r) => s + parseFloat(r[1].replace(/,/g,'')), 0) / prevRows.length
+      : null;
+
+    return { open, high, low, close, vol: todayVol, avg5Vol, dateLabel: row[0].trim() };
+  }catch(e){ return null; }
+}
+
+async function fetchUS(symbol, date){
+  const key = document.getElementById('polygon_key').value.trim();
+  if(!key){ setStatus('請先填入 Polygon.io API Key','err'); return; }
+  setStatus(`查詢中（${symbol}）…`, 'loading');
+  try{
+    const url = `https://api.polygon.io/v1/open-close/${symbol}/${date}?adjusted=true&apiKey=${key}`;
+    const res  = await fetch(url);
+    const json = await res.json();
+    if(!json.open){ setStatus(`找不到 ${symbol} 在 ${date} 的資料（假日或代號錯誤）`,'err'); return; }
+
+    // 5-day avg volume
+    let avg5Vol = null;
+    try{
+      const from = subtractDays(date,10).replace(/-/g,'-');
+      const aggUrl = `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/1/day/${from}/${date}?adjusted=true&sort=asc&limit=10&apiKey=${key}`;
+      const aggRes  = await fetch(aggUrl);
+      const aggJson = await aggRes.json();
+      if(aggJson.results && aggJson.results.length>=2){
+        const prev = aggJson.results.slice(-6,-1);
+        if(prev.length>0) avg5Vol = prev.reduce((s,r)=>s+r.v,0)/prev.length;
+      }
+    }catch(e){}
+
+    setStatus(`✓ ${symbol}　${date} 資料已帶入`, 'ok');
+    analyzeAndRender(json.open, json.high, json.low, json.close, symbol, json.volume||null, avg5Vol);
+  }catch(e){ setStatus('查詢失敗：'+e.message,'err'); }
+}
+
+async function fetchStooq(ticker, date){
+  try{
+    // stooq CSV: columns = Date,Open,High,Low,Close,Volume
+    const from = subtractDays(date, 15);
+    const url = `https://stooq.com/q/d/l/?s=${ticker}&d1=${from.replace(/-/g,'')}&d2=${date.replace(/-/g,'')}&i=d`;
+    const res = await fetch(url);
+    if(!res.ok) return null;
+    const text = await res.text();
+    const lines = text.trim().split('\n').filter(l=>l&&!l.startsWith('Date'));
+    if(!lines.length) return null;
+
+    // parse all rows
+    const rows = lines.map(l=>{
+      const [d,o,h,lw,c,v]=l.split(',');
+      return { date:d.trim(), open:parseFloat(o), high:parseFloat(h), low:parseFloat(lw), close:parseFloat(c), vol:parseFloat(v)||0 };
+    }).filter(r=>!isNaN(r.open));
+
+    if(!rows.length) return null;
+
+    // find exact date or use last
+    const targetRow = rows.find(r=>r.date===date) || rows[rows.length-1];
+    const targetIdx = rows.indexOf(targetRow);
+
+    // 5-day avg vol from previous rows
+    const prevRows = rows.slice(Math.max(0, targetIdx-5), targetIdx);
+    const avg5Vol = prevRows.length>0 ? prevRows.reduce((s,r)=>s+r.vol,0)/prevRows.length : null;
+
+    return {
+      open: targetRow.open, high: targetRow.high, low: targetRow.low, close: targetRow.close,
+      vol: targetRow.vol, avg5Vol,
+      dateLabel: targetRow.date
+    };
+  }catch(e){ return null; }
+}
+
+function analyzeAndRender(open,high,low,close,symbol,todayVol,avg5Vol){
+  const isRed = close >= open;
+
+  // sizes
+  const bodySize  = Math.abs(close - open);
+  const upperSize = isRed ? high - close : high - open;
+  const lowerSize = isRed ? open - low   : close - low;
+
+  // dominant part
+  const sizes = {body:bodySize, upper:upperSize, lower:lowerSize};
+  const dominant = Object.keys(sizes).reduce((a,b)=>sizes[a]>=sizes[b]?a:b);
+
+  // price chips
+  const pr=document.getElementById('price-row');
+  pr.innerHTML=`
+    <div class="price-chip">開盤 <span>${open}</span></div>
+    <div class="price-chip">收盤 <span>${close}</span></div>
+    <div class="price-chip">最高 <span>${high}</span></div>
+    <div class="price-chip">最低 <span>${low}</span></div>
+  `;
+
+  // candle type card
+  const ctc=document.getElementById('candle-type-card');
+  ctc.className='candle-type-card '+(isRed?'red-k':'black-k');
+  document.getElementById('candle-svg').innerHTML = buildCandleSVG(isRed, dominant);
+  document.getElementById('candle-type-label').textContent = isRed ? '🔴 紅K（陽線）' : '⚫ 黑K（陰線）';
+  document.getElementById('candle-type-sub').textContent =
+    `實體 ${fmt(bodySize)} ／ 上引線 ${fmt(upperSize)} ／ 下引線 ${fmt(lowerSize)}`;
+
+  const domLabels={body:'實體最大',upper:'上引線最大',lower:'下引線最大'};
+  const domClasses={body:isRed?'dom-body':'dom-body-b',upper:'dom-upper',lower:'dom-lower'};
+  const db=document.getElementById('dominant-badge');
+  db.textContent='主體：'+domLabels[dominant];
+  db.className='dominant-badge '+domClasses[dominant];
+
+  // section label
+  const sl=document.getElementById('section-label');
+  if(isRed){sl.style.background='#1f1420';sl.style.color='#e84545';sl.textContent='📊 計算結果（紅K）';}
+  else     {sl.style.background='#22263a';sl.style.color='#aaa';   sl.textContent='📊 計算結果（黑K）';}
+
+  // show all 3 cards, auto-fill only dominant
+  if(isRed){
+    buildCard('card-body-wrap',  'red-body',  open, high, low, close, dominant==='body',  dominant==='body');
+    buildCard('card-upper-wrap', 'red-upper', open, high, low, close, dominant==='upper', dominant==='upper');
+    buildCard('card-lower-wrap', 'red-lower', open, high, low, close, dominant==='lower', dominant==='lower');
+  } else {
+    buildCard('card-body-wrap',  'blk-body',  open, high, low, close, dominant==='body',  dominant==='body');
+    buildCard('card-upper-wrap', 'blk-upper', open, high, low, close, dominant==='upper', dominant==='upper');
+    buildCard('card-lower-wrap', 'blk-lower', open, high, low, close, dominant==='lower', dominant==='lower');
+  }
+
+  // ── Volume ──
+  renderVolume(todayVol, avg5Vol);
+
+  document.getElementById('result-panel').style.display='flex';
+}
+
+function recalc(wrapId, type){
+  const cfg = CARD_CONFIG[type];
+  const inputKeys = {
+    'red-body':  ['close','open'],
+    'red-upper': ['high','close'],
+    'red-lower': ['open','low','close'],
+    'blk-body':  ['open','close'],
+    'blk-upper': ['high','open','close'],
+    'blk-lower': ['close','low'],
+  };
+  const keys = inputKeys[type] || [];
+  const vals = {};
+  keys.forEach(k=>{
+    const el = document.getElementById(`${wrapId}_${k}`);
+    vals[k] = el ? parseFloat(el.value) : NaN;
+  });
+  const {open=NaN,high=NaN,low=NaN,close=NaN} = vals;
+  const allOk = Object.values(vals).every(v=>!isNaN(v)) && !isNaN(close) && close!==0;
+
+  const pctEl = document.getElementById(`${wrapId}_pct`);
+  const sigEl = document.getElementById(`${wrapId}_sig`);
+
+  if(!allOk){ pctEl.textContent='—'; pctEl.className='pct-box'; sigEl.textContent=''; sigEl.className='signal-box'; return; }
+
+  const raw = cfg.calc(open,high,low,close);
+  const pct = raw*100;
+  const absPct = Math.abs(pct);
+  pctEl.textContent = pct.toFixed(2)+'%';
+  pctEl.className = 'pct-box '+(pct>0?'pos':pct<0?'neg':'');
+
+  const sig = cfg.signal(absPct);
+  if(sig==='buy')  { sigEl.textContent='▲ 買入警訊'; sigEl.className='signal-box buy'; }
+  else if(sig==='sell'){ sigEl.textContent='▼ 賣出警訊'; sigEl.className='signal-box sell'; }
+  else             { sigEl.textContent='— 無訊號';   sigEl.className='signal-box none'; }
+}
+
+function fmt(n){ return n.toFixed(2); }
+
+function subtractDays(dateStr, days){
+  const d=new Date(dateStr);
+  d.setDate(d.getDate()-days);
+  return d.toISOString().slice(0,10);
+}
+
+function fmtVol(v){
+  if(v>=100000000) return (v/100000000).toFixed(2)+'億';
+  if(v>=10000)     return (v/10000).toFixed(1)+'萬';
+  return v.toFixed(0);
+}
+
+function renderVolume(todayVol, avg5Vol){
+  const todayEl   = document.getElementById('vol-today');
+  const avgEl     = document.getElementById('vol-avg');
+  const multiEl   = document.getElementById('vol-multiple');
+  const signalEl  = document.getElementById('vol-signal');
+  const barEl     = document.getElementById('vol-bar');
+
+  if(!todayVol){ todayEl.textContent='無資料'; avgEl.textContent='—'; multiEl.textContent='—'; signalEl.textContent=''; return; }
+
+  todayEl.textContent = fmtVol(todayVol);
+  avgEl.textContent   = avg5Vol ? fmtVol(avg5Vol) : '資料不足';
+
+  if(!avg5Vol||avg5Vol===0){ multiEl.textContent='—'; signalEl.textContent=''; return; }
+
+  const multiple = todayVol / avg5Vol;
+  multiEl.textContent = multiple.toFixed(2) + ' 倍';
+
+  // color
+  if(multiple>=2)      { multiEl.className='vol-multiple high'; }
+  else if(multiple<0.5){ multiEl.className='vol-multiple low';  }
+  else                 { multiEl.className='vol-multiple mid';  }
+
+  // signal
+  if(multiple>=2){
+    signalEl.textContent='🔥 爆量（≥2倍）';
+    signalEl.className='vol-signal surge';
+  } else if(multiple<0.5){
+    signalEl.textContent='❄️ 縮量（<0.5倍）';
+    signalEl.className='vol-signal shrink';
+  } else {
+    signalEl.textContent='📊 正常量能';
+    signalEl.className='vol-signal normal';
+  }
+
+  // bar: cap at 3x = 100%
+  const barPct = Math.min(multiple/3*100, 100);
+  barEl.style.width = barPct+'%';
+  barEl.style.background = multiple>=2 ? 'var(--red)' : multiple<0.5 ? 'var(--blue)' : 'var(--accent)';
+}
+
+// ── Card builder ──
+const CARD_CONFIG = {
+  'red-body':  {
+    tag:'紅K 實體', tagCls:'tag-red',
+    formula:'(<t>收盤價</t> − <b>開盤價</b>) ÷ 收盤價',
+    note:'最上面＝收盤價　／　最下面＝開盤價',
+    calc:(o,h,l,c)=>(c-o)/c,
+    signal: p => p<5?'buy':null,
+    svg: (o,h,l,c)=>candleBodySVG(true,false,false),
+  },
+  'red-upper': {
+    tag:'上引線（紅K）', tagCls:'tag-shadow',
+    formula:'(<t>最高價</t> − <b>收盤價</b>) ÷ 收盤價',
+    note:'最上面＝最高價　／　最下面＝收盤價',
+    calc:(o,h,l,c)=>(h-c)/c,
+    signal: p => p>5?'sell':null,
+    svg: ()=>candleBodySVG(true,true,false),
+  },
+  'red-lower': {
+    tag:'下引線（紅K）', tagCls:'tag-shadow',
+    formula:'(<t>開盤價</t> − <b>最低價</b>) ÷ 收盤價',
+    note:'最上面＝開盤價　／　最下面＝最低價',
+    calc:(o,h,l,c)=>(o-l)/c,
+    signal: p => p<5?'buy':null,
+    svg: ()=>candleBodySVG(true,false,true),
+  },
+  'blk-body':  {
+    tag:'黑K 實體', tagCls:'tag-black',
+    formula:'(<t>開盤價</t> − <b>收盤價</b>) ÷ 收盤價',
+    note:'最上面＝開盤價　／　最下面＝收盤價',
+    calc:(o,h,l,c)=>(o-c)/c,
+    signal: p => p>5?'sell':null,
+    svg: ()=>candleBodySVG(false,false,false),
+  },
+  'blk-upper': {
+    tag:'上引線（黑K）', tagCls:'tag-shadow',
+    formula:'(<t>最高價</t> − <b>開盤價</b>) ÷ 收盤價',
+    note:'最上面＝最高價　／　最下面＝開盤價',
+    calc:(o,h,l,c)=>(h-o)/c,
+    signal: p => p>5?'sell':null,
+    svg: ()=>candleBodySVG(false,true,false),
+  },
+  'blk-lower': {
+    tag:'下引線（黑K）', tagCls:'tag-shadow',
+    formula:'(<t>收盤價</t> − <b>最低價</b>) ÷ 收盤價',
+    note:'最上面＝收盤價　／　最下面＝最低價',
+    calc:(o,h,l,c)=>(c-l)/c,
+    signal: p => p<5?'buy':null,
+    svg: ()=>candleBodySVG(false,false,true),
+  },
+};
+
+function buildCard(wrapId, type, open, high, low, close, isDominant, autoFill){
+  const cfg=CARD_CONFIG[type];
+  const raw = autoFill ? cfg.calc(open,high,low,close) : null;
+  const pct = raw !== null ? raw*100 : null;
+  const absPct = pct !== null ? Math.abs(pct) : null;
+  const pctStr = pct !== null ? pct.toFixed(2)+'%' : '—';
+  const pctCls = pct===null ? '' : pct>0?'pos':pct<0?'neg':'';
+  const sig = (autoFill && absPct!==null) ? cfg.signal(absPct) : null;
+
+  const sigHTML = sig==='buy'
+    ? '<div class="signal-box buy">▲ 買入警訊</div>'
+    : sig==='sell'
+    ? '<div class="signal-box sell">▼ 賣出警訊</div>'
+    : autoFill ? '<div class="signal-box none">— 無訊號</div>' : '';
+
+  const dominantTag = isDominant
+    ? '<span class="dominant-tag">主體最大 ★</span>'
+    : '';
+
+  const formulaHTML = cfg.formula
+    .replace(/<t>/g,'<span class="t">').replace(/<\/t>/g,'</span>')
+    .replace(/<b>/g,'<span class="b">').replace(/<\/b>/g,'</span>');
+
+  // input values: pre-fill if dominant, empty otherwise
+  const getVal = (key) => {
+    if(!autoFill) return '';
+    const map = {open, high, low, close};
+    return map[key] ?? '';
+  };
+
+  // determine which inputs are needed per type
+  const inputKeys = {
+    'red-body':  [{k:'close',l:'收盤價'},{k:'open',l:'開盤價'}],
+    'red-upper': [{k:'high',l:'最高價'},{k:'close',l:'收盤價'}],
+    'red-lower': [{k:'open',l:'開盤價'},{k:'low',l:'最低價'},{k:'close',l:'收盤價'}],
+    'blk-body':  [{k:'open',l:'開盤價'},{k:'close',l:'收盤價'}],
+    'blk-upper': [{k:'high',l:'最高價'},{k:'open',l:'開盤價'},{k:'close',l:'收盤價'}],
+    'blk-lower': [{k:'close',l:'收盤價'},{k:'low',l:'最低價'}],
+  };
+  const fields = inputKeys[type] || [];
+  const inputsHTML = fields.map(f=>`
+    <div class="field">
+      <label>${f.l}</label>
+      <input type="number" inputmode="decimal" id="${wrapId}_${f.k}"
+        value="${getVal(f.k)}" placeholder="輸入"
+        oninput="recalc('${wrapId}','${type}')">
+    </div>`).join('');
+
+  document.getElementById(wrapId).innerHTML=`
+    <div class="res-card${isDominant?' dominant':''}">
+      <div class="candle-col">${cfg.svg()}</div>
+      <div class="card-body">
+        <div class="card-top">
+          <span class="tag ${cfg.tagCls}">${cfg.tag}</span>
+          ${dominantTag}
+          <span class="formula">${formulaHTML}</span>
+        </div>
+        <div class="note">${cfg.note}</div>
+        <div class="inputs-row">
+          ${inputsHTML}
+          <div class="result-area">
+            <div class="pct-box ${pctCls}" id="${wrapId}_pct">${pctStr}</div>
+            <div class="signal-box${sig?' '+(sig==='buy'?'buy':'sell'):(autoFill?' none':'')}"
+                 id="${wrapId}_sig">${sig==='buy'?'▲ 買入警訊':sig==='sell'?'▼ 賣出警訊':autoFill?'— 無訊號':''}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── SVG helpers ──
+function candleBodySVG(isRed, upperHighlight, lowerHighlight){
+  const bodyColor = isRed ? '#e84545' : '#888';
+  const wickColor = isRed ? '#e84545' : '#888';
+  const hi = '#f0b429'; // highlight color
+  const uCol = upperHighlight ? hi : wickColor;
+  const lCol = lowerHighlight ? hi : wickColor;
+  const uOp  = upperHighlight ? '1' : '0.25';
+  const lOp  = lowerHighlight ? '1' : '0.25';
+  const bOp  = (!upperHighlight && !lowerHighlight) ? '1' : '0.25';
+  const uLabel = isRed ? '最高' : '最高';
+  const bTopLabel = isRed ? '收盤' : '開盤';
+  const bBotLabel = isRed ? '開盤' : '收盤';
+  const lLabel = '最低';
+  return `<svg width="36" height="90" viewBox="0 0 36 90">
+    <line x1="18" y1="2"  x2="18" y2="20" stroke="${uCol}" stroke-width="2.5" opacity="${uOp}"/>
+    <rect x="8" y="20" width="20" height="40" fill="${bodyColor}" rx="2" opacity="${bOp}"/>
+    <line x1="18" y1="60" x2="18" y2="88" stroke="${lCol}" stroke-width="2.5" opacity="${lOp}"/>
+    <text x="18" y="11" text-anchor="middle" fill="${uCol}" font-size="7" font-family="monospace" opacity="${uOp}">${uLabel}</text>
+    <text x="18" y="34" text-anchor="middle" fill="#e84545" font-size="7" font-family="monospace" opacity="${bOp}">${bTopLabel}</text>
+    <text x="18" y="52" text-anchor="middle" fill="#60a5fa" font-size="7" font-family="monospace" opacity="${bOp}">${bBotLabel}</text>
+    <text x="18" y="84" text-anchor="middle" fill="${lCol}" font-size="7" font-family="monospace" opacity="${lOp}">${lLabel}</text>
+  </svg>`;
+}
+
+function buildCandleSVG(isRed, dominant){
+  const bodyColor = isRed ? '#e84545' : '#888';
+  const hi = '#f0b429';
+  const base = isRed ? '#e84545' : '#888';
+  const uCol = dominant==='upper' ? hi : base;
+  const lCol = dominant==='lower' ? hi : base;
+  const bOp  = dominant==='body'  ? '1' : '0.3';
+  const uOp  = dominant==='upper' ? '1' : '0.3';
+  const lOp  = dominant==='lower' ? '1' : '0.3';
+  return `<svg width="44" height="90" viewBox="0 0 44 90">
+    <line x1="22" y1="2"  x2="22" y2="18" stroke="${uCol}" stroke-width="3" opacity="${uOp}"/>
+    <rect x="9"  y="18" width="26" height="44" fill="${bodyColor}" rx="3" opacity="${bOp}"/>
+    <line x1="22" y1="62" x2="22" y2="88" stroke="${lCol}" stroke-width="3" opacity="${lOp}"/>
+  </svg>`;
+}
+
+function setStatus(msg,cls){
+  const el=document.getElementById('status');
+  el.textContent=msg;
+  el.className='status-bar '+(cls||'');
+}
+</script>
+</body>
+</html>
